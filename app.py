@@ -1,73 +1,88 @@
-import 'dart:convert';
-import 'dart:io';
-import 'package:camera/camera.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:path/path.dart' as Path;
-import 'package:http/http.dart' as http;
+import uvicorn
+from fastapi import FastAPI, HTTPException
+import requests
+import io
+from PIL import Image
+import yolov5
+from typing import Dict
+import urllib.parse
+app = FastAPI()
 
-Future<bool> uploadImage(XFile file) async {
-  // Get the current user's UID
-  final User? user = FirebaseAuth.instance.currentUser;
-  final uid = user?.uid;
 
-  // Get the user's location
-  final position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high);
+# https://upload.wikimedia.org/wikipedia/commons/3/3f/JPEG_example_flower.jpg
 
-  // Create a reference to the location you want to upload to in Firebase Storage
-  final storageRef = FirebaseStorage.instance
-      .ref("uploads")
-      .child("$uid/${Path.basename(file.path)}");
+# load model
+model = yolov5.load('keremberke/yolov5m-garbage')
 
-  try {
-    // Upload the image file to Firebase Storage
-    final snapshot = await storageRef.putFile(File(file.path));
+# set model parameters
+model.conf = 0.25  # NMS confidence threshold
+model.iou = 0.45  # NMS IoU threshold
+model.agnostic = False  # NMS class-agnostic
+model.multi_label = False  # NMS multiple labels per box
+model.max_det = 1000  # maximum number of detections per image
 
-    // Get the download URL of the uploaded image
-    final downloadUrl = await snapshot.ref.getDownloadURL();
 
-    ////call the api and set the level of garbage and store the data with the image
-    int message = 0;
-    await (() async {
-      final String apiUrl = "http://127.0.0.1:8000/predict";
-      final Map<String, dynamic> requestData = {'url': downloadUrl};
-      final response = await http.post(Uri.parse(apiUrl),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(requestData));
+@app.get('/')
+def index():
+    return {'message': 'Hello, World'}
 
-      if (response.statusCode == 200) {
-        Map<String, dynamic> responseData = jsonDecode(response.body);
-        message = responseData["message"];
-      } else {
-        message = -1;
-      }
-    });
 
-    print(message);
-    print("\n\n\n\n");
-    print(downloadUrl);
+@app.post('/predict')
+async def process_url(body: Dict[str, str]):
 
-    // Save the download URL to Firestore with the current user's UID as the document ID
-    await FirebaseFirestore.instance
-        .collection('images')
-        .doc(uid)
-        .collection(
-            'user_images') // use a collection name that represents the user's images
-        .doc(DateTime.now()
-            .toString()) // use DateTime.now().toString() to get the current timestamp as a string
-        .set({
-      'url': downloadUrl,
-      'latitude': position.latitude,
-      'longitude': position.longitude,
-      'extent': message
-    });
+    # make a GET request to the URL
+    url = body['url']
+    img = url
+    # print(img)
+    # print("\n\n\n\n")
 
-    return true;
-  } catch (e) {
-    print(e);
-    return false;
-  }
-}
+    results = model(img, size=640)
+
+    # show detection bounding boxes on image
+    # results.show()
+    results = str(results)
+
+    # print(results)  # results output image 1/1: 720x1280 2 biodegradables, 1 paper
+    results = results.split('Speed:')[0]
+    spr = results.split(' ')
+    # spr = spr.split('\n')
+    # print(results)
+
+    # count the number of detected objects
+    count = 0
+    last_word = '0'
+    for label in spr:
+
+        label = label.strip().replace(",", "")
+        # print(label)
+        # label = label.strip().replace("\n", "")
+        # print( " formatted lable --------------" +label)
+        # print(label)
+        if (label == "paper" or label == "papers"):
+            count = count + int(last_word)
+        elif (label == "rubber" or label == "rubbers"):
+            count = count + int(last_word)
+        elif (label == "plastics" or label == "plastic"):
+            count = count + int(last_word)
+            # print("loade lele")
+        elif (label == "glass" or label == "glasses"):
+            count = count + int(last_word)
+            # print("loade lele")
+        elif (label == "biodegradable"):
+            count = count + int(last_word)
+            # print("loade lele")
+
+        else:
+            last_word = label
+            # print("fcku")
+            # print(last_word)
+        # print(last_word)
+
+    # print(" this is the value of count " + str(count))
+
+    # return the result
+    return {"message": count}
+
+
+if __name__ == '__main__':
+    uvicorn.run(app, host='0.0.0.0', port=10000)
