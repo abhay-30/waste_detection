@@ -19,6 +19,14 @@ model.multi_label = False  # NMS multiple labels per box
 model.max_det = 1000  # maximum number of detections per image
 
 
+
+
+
+@app.get('/')
+def index():
+    return {'message': 'Hello, World'}
+
+
 @app.get('/predict')
 async def process_url(url: str):
     # make a GET request to the URL
