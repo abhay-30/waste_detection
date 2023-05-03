@@ -71,6 +71,8 @@ async def process_url(body: Dict[str, str]):
         elif (label == "biodegradable"):
             count = count + int(last_word)
             # print("loade lele")
+        elif(label=="cardboard" or label=="cardboards"):
+            count= count + int(last_word);
 
         else:
             last_word = label
